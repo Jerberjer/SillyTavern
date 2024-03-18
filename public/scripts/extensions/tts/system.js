@@ -1,7 +1,8 @@
-import { isMobile } from "../../RossAscends-mods.js";
-import { getPreviewString } from "./index.js";
-
-export { SystemTtsProvider }
+import { isMobile } from '../../RossAscends-mods.js';
+import { getPreviewString } from './index.js';
+import { talkingAnimation } from './index.js';
+import { saveTtsProviderSettings } from './index.js';
+export { SystemTtsProvider };
 
 /**
  * Chunkify
@@ -45,7 +46,7 @@ var speechUtteranceChunker = function (utt, settings, callback) {
         newUtt = new SpeechSynthesisUtterance(chunk);
         var x;
         for (x in utt) {
-            if (utt.hasOwnProperty(x) && x !== 'text') {
+            if (Object.hasOwn(utt, x) && x !== 'text') {
                 newUtt[x] = utt[x];
             }
         }
@@ -69,6 +70,7 @@ var speechUtteranceChunker = function (utt, settings, callback) {
     //placing the speak invocation inside a callback fixes ordering and onend issues.
     setTimeout(function () {
         speechSynthesis.speak(newUtt);
+        talkingAnimation(true);
     }, 0);
 };
 
@@ -77,19 +79,20 @@ class SystemTtsProvider {
     // Config //
     //########//
 
-    settings
-    voices = []
-    separator = ' ... '
+    settings;
+    ready = false;
+    voices = [];
+    separator = ' ... ';
 
     defaultSettings = {
         voiceMap: {},
         rate: 1,
         pitch: 1,
-    }
+    };
 
     get settingsHtml() {
         if (!('speechSynthesis' in window)) {
-            return "Your browser or operating system doesn't support speech synthesis";
+            return 'Your browser or operating system doesn\'t support speech synthesis';
         }
 
         return `<p>Uses the voices provided by your operating system</p>
@@ -104,13 +107,13 @@ class SystemTtsProvider {
         this.settings.pitch = Number($('#system_tts_pitch').val());
         $('#system_tts_pitch_output').text(this.settings.pitch);
         $('#system_tts_rate_output').text(this.settings.rate);
-        console.log('Save changes');
+        saveTtsProviderSettings();
     }
 
-    loadSettings(settings) {
+    async loadSettings(settings) {
         // Populate Provider UI given input settings
         if (Object.keys(settings).length == 0) {
-            console.info("Using default TTS Provider settings");
+            console.info('Using default TTS Provider settings');
         }
 
         // iOS should only allows speech synthesis trigged by user interaction
@@ -141,27 +144,43 @@ class SystemTtsProvider {
 
         $('#system_tts_rate').val(this.settings.rate || this.defaultSettings.rate);
         $('#system_tts_pitch').val(this.settings.pitch || this.defaultSettings.pitch);
+
+        // Trigger updates
+        $('#system_tts_rate').on('input', () => { this.onSettingsChange(); });
+        $('#system_tts_rate').on('input', () => { this.onSettingsChange(); });
+
         $('#system_tts_pitch_output').text(this.settings.pitch);
         $('#system_tts_rate_output').text(this.settings.rate);
-        console.info("Settings loaded");
+        console.debug('SystemTTS: Settings loaded');
     }
 
-    async onApplyClick() {
-        return
+    // Perform a simple readiness check by trying to fetch voiceIds
+    async checkReady() {
+        await this.fetchTtsVoiceObjects();
+    }
+
+    async onRefreshClick() {
+        return;
     }
 
     //#################//
     //  TTS Interfaces //
     //#################//
-    fetchTtsVoiceIds() {
+    fetchTtsVoiceObjects() {
         if (!('speechSynthesis' in window)) {
             return [];
         }
 
-        return speechSynthesis
-            .getVoices()
-            .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name))
-            .map(x => ({ name: x.name, voice_id: x.voiceURI, preview_url: false, lang: x.lang }));
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                const voices = speechSynthesis
+                    .getVoices()
+                    .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name))
+                    .map(x => ({ name: x.name, voice_id: x.voiceURI, preview_url: false, lang: x.lang }));
+
+                resolve(voices);
+            }, 1);
+        });
     }
 
     previewTtsVoice(voiceId) {
@@ -172,7 +191,7 @@ class SystemTtsProvider {
         const voice = speechSynthesis.getVoices().find(x => x.voiceURI === voiceId);
 
         if (!voice) {
-            throw `TTS Voice name ${voiceName} not found`
+            throw `TTS Voice id ${voiceId} not found`;
         }
 
         speechSynthesis.cancel();
@@ -186,14 +205,14 @@ class SystemTtsProvider {
 
     async getVoice(voiceName) {
         if (!('speechSynthesis' in window)) {
-            return { voice_id: null }
+            return { voice_id: null };
         }
 
         const voices = speechSynthesis.getVoices();
         const match = voices.find(x => x.name == voiceName);
 
         if (!match) {
-            throw `TTS Voice name ${voiceName} not found`
+            throw `TTS Voice name ${voiceName} not found`;
         }
 
         return { voice_id: match.voiceURI, name: match.name };
@@ -221,6 +240,7 @@ class SystemTtsProvider {
                 //some code to execute when done
                 resolve(silence);
                 console.log('System TTS done');
+                talkingAnimation(false);
             });
         });
     }
